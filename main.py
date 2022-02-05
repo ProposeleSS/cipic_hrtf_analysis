@@ -1,17 +1,17 @@
 import pdb
 import matplotlib.pyplot as plt
-import json
 import numpy as np
 from numpy.fft import fft, fftfreq
 
-from generate_data import gen_data
+from generate_data import gen_data_hrir, gen_data_anthro
 
-DATADIR = 'standard_hrir_database'
+DATADIR_HRIR = 'standard_hrir_database'
+DATADIR_PHY = 'anthropometry'
 Fs = 44100
 N_SAMPLES = 200 # length of fft
 
-def main():
-    hrir_raw = gen_data(DATADIR)['data']
+def extract_data():
+    hrir_raw = gen_data_hrir(DATADIR_HRIR)['data']
     # hrir array is 3d, but we care only about 60 deg azimuth and 0 deg elevation (perfect listening position):
     # this corresponds to:
     # hrir_r[2][8] for az -65 and 0 el  <left side
@@ -44,8 +44,10 @@ def main():
         name = s['name'][0]
 
         hrir_filtered.append({
-            'left': left_raw,
+            # raw data from measurements
+            'left': left_raw,      
             'right': right_raw,
+            # averaged data of 55 and 65 degrees as we only care about 60
             'left_avg': left_avg,
             'right_avg': right_avg,
             'left_avg_fft': {
@@ -59,11 +61,62 @@ def main():
             'name': name
         })
     
-    yf = hrir_filtered[0]['left_avg_fft']['left']
-    xf = fftfreq(N_SAMPLES, 1/Fs)[:N_SAMPLES//2]
-    plt.plot(xf, 2.0/N_SAMPLES * np.abs(yf[0:N_SAMPLES//2]))
-    plt.grid()
-    plt.show()
+    anthro = gen_data_anthro(DATADIR_PHY)
+    # we only care about head circumference and horizontal ear offset from center.
+    # circumference: x16, offset: x5 (Don't forget -1 as index starts from 0, not 1)
+    for s in hrir_filtered:
+        s_id = int(s['name'].split('_')[1])
+        for i in range(len(anthro['id'])):
+            if anthro['id'][i] == s_id:
+                break
+        x = anthro['X'][i]
+        s['X'] = x
+        s['circumference'] = x[15]
+        s['offset'] = x[4]
 
+    return hrir_filtered
+
+def rms(value):
+    return np.sqrt(np.mean(np.absolute(value)**2))
+
+def statistical_analysis(data):
+    # since anthropometric data is assuming human head is symetric, we will only check one side.
+    for s in data:
+        left = s['left_avg_fft']['left']
+        right = s['left_avg_fft']['right']
+        diff = abs(left - right)
+        s['fft_diff'] = diff
+
+        # yf = s['fft_diff']
+        xf = fftfreq(N_SAMPLES, 1/Fs)[:N_SAMPLES//2]
+        # fig, ax = plt.subplots()
+        # ax.semilogx(xf, 2.0/N_SAMPLES * np.abs(left[0:N_SAMPLES//2]), label='left')
+        # ax.semilogx(xf, 2.0/N_SAMPLES * np.abs(right[0:N_SAMPLES//2]), label='right')
+        # ax.semilogx(xf, 2.0/N_SAMPLES * np.abs(yf[0:N_SAMPLES//2]), label='diff')
+        # plt.grid()
+        # plt.legend()
+        # plt.show()
+
+        # get low frequency attenuation
+        for i in range(len(diff)):
+            if diff[i+1] < diff[i]:
+                peak_diff = diff[i]
+                break
+    
+        # get frequency mapped to fft index
+        xfeed_freq = xf[i]
+
+        # get attenuation in dB
+        left_rms = rms(left[:i])
+        right_rms = rms(right[:i])
+        diff_rms = left_rms - right_rms
+        xfeed_att_db = 20 * np.log10(diff_rms)
+
+        s['xfeed_att_db'] = xfeed_att_db
+        s['xfeed_freq'] = xfeed_freq
+
+        print(f"circumference: {s['circumference']}, offset: {s['offset']:.2f}, att_db: {xfeed_att_db:.2f}, freq: {xfeed_freq}")
+        
 if __name__ == '__main__':
-    main()
+    data = extract_data()
+    statistical_analysis(data)
