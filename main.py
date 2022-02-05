@@ -5,6 +5,7 @@ from numpy.fft import fft, fftfreq
 from scipy.stats import pearsonr, spearmanr, kendalltau
 
 from generate_data import gen_data_hrir, gen_data_anthro
+from x_names import x_params_map
 
 DATADIR_HRIR = 'standard_hrir_database'
 DATADIR_PHY = 'anthropometry'
@@ -140,7 +141,12 @@ def statistical_analysis(data):
     # Run tests: 
     results = []
     meta = []
-    for x in [xfeed_freq, xfeed_db, xfeed_att]:
+    x_params = {
+        'x_freq': xfeed_freq,
+        'x_att_db': xfeed_db,
+        'x_att': xfeed_att
+    }
+    for name, x in x_params.items():
         for sd in range(len(stats_data)):
             # check for nans and skip them! 
             x_test = []
@@ -152,17 +158,16 @@ def statistical_analysis(data):
             p = pearsonr(x_test, sd_test)
             s = spearmanr(x_test, sd_test)
             k = kendalltau(x_test, sd_test)
-            p_values = [i[1] for i in [p,s,k]]
-            if all([i<0.001 for i in p_values]):
-                print(f'EUREKA! statistically significant x index: {sd}')
-            results.append((p, s, k))
-            meta.append(sd)
 
-    # for r in range(len(results)):
-    #     p_values = [p[1] for p in results[r]]
-    #     if all([i<0.05 for i in p_values]):
-    #         print(f'EUREKA!: {p_values}: meta: {meta[r]}')
-    # pdb.set_trace()
+            results.append((p, s, k))
+            meta.append((name, sd))
+
+    for r in range(len(results)):
+        p_values = [p[1] for p in results[r]]
+        significance = [0.05, 0.01, 0.001]
+        for s in significance:
+            if all([i<s for i in p_values]):
+                print(f"{meta[r][0]} correlates to {x_params_map[str(meta[r][1])]} with {s} significance")
 
 if __name__ == '__main__':
     data = extract_data()
