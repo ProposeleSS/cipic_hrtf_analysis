@@ -2,6 +2,7 @@ import pdb
 import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import fft, fftfreq
+from scipy.stats import pearsonr, spearmanr, kendalltau
 
 from generate_data import gen_data_hrir, gen_data_anthro
 
@@ -9,6 +10,11 @@ DATADIR_HRIR = 'standard_hrir_database'
 DATADIR_PHY = 'anthropometry'
 Fs = 44100
 N_SAMPLES = 200 # length of fft
+
+
+def rms(value):
+    return np.sqrt(np.mean(np.absolute(value)**2))
+
 
 def extract_data():
     hrir_raw = gen_data_hrir(DATADIR_HRIR)['data']
@@ -74,14 +80,8 @@ def extract_data():
         s['circumference'] = x[15]
         s['offset'] = x[4]
 
-    return hrir_filtered
-
-def rms(value):
-    return np.sqrt(np.mean(np.absolute(value)**2))
-
-def statistical_analysis(data):
     # since anthropometric data is assuming human head is symetric, we will only check one side.
-    for s in data:
+    for s in hrir_filtered:
         left = s['left_avg_fft']['left']
         right = s['left_avg_fft']['right']
         diff = abs(left - right)
@@ -112,11 +112,58 @@ def statistical_analysis(data):
         diff_rms = left_rms - right_rms
         xfeed_att_db = 20 * np.log10(diff_rms)
 
+        s['xfeed_att'] = diff_rms
         s['xfeed_att_db'] = xfeed_att_db
         s['xfeed_freq'] = xfeed_freq
 
-        print(f"circumference: {s['circumference']}, offset: {s['offset']:.2f}, att_db: {xfeed_att_db:.2f}, freq: {xfeed_freq}")
+        # print(f"circumference: {s['circumference']}, offset: {s['offset']:.2f}, att_db: {xfeed_att_db:.2f}, freq: {xfeed_freq}")
         
+    return hrir_filtered
+
+
+def statistical_analysis(data):
+    # search for corelations within physical parameters and xfeed:
+
+    # first, collect data in a matrix:
+    stats_data = np.zeros((len(data[0]['X']), len(data)))
+    xfeed_freq = np.zeros(len(data))
+    xfeed_db = np.zeros(len(data))
+    xfeed_att = np.zeros(len(data))
+
+    for i in range(len(data)):
+        for j in range(len(data[i]['X'])):
+            stats_data[j][i] = data[i]['X'][j]
+        xfeed_freq[i] = data[i]['xfeed_freq']
+        xfeed_db[i] = data[i]['xfeed_att_db']
+        xfeed_att[i] = data[i]['xfeed_att']
+            
+    # Run tests: 
+    results = []
+    meta = []
+    for x in [xfeed_freq, xfeed_db, xfeed_att]:
+        for sd in range(len(stats_data)):
+            # check for nans and skip them! 
+            x_test = []
+            sd_test = []
+            for i in range(len(stats_data[sd])):
+                if not np.isnan(stats_data[sd][i]):
+                    x_test.append(x[i])
+                    sd_test.append(stats_data[sd][i])
+            p = pearsonr(x_test, sd_test)
+            s = spearmanr(x_test, sd_test)
+            k = kendalltau(x_test, sd_test)
+            p_values = [i[1] for i in [p,s,k]]
+            if all([i<0.001 for i in p_values]):
+                print(f'EUREKA! statistically significant x index: {sd}')
+            results.append((p, s, k))
+            meta.append(sd)
+
+    # for r in range(len(results)):
+    #     p_values = [p[1] for p in results[r]]
+    #     if all([i<0.05 for i in p_values]):
+    #         print(f'EUREKA!: {p_values}: meta: {meta[r]}')
+    # pdb.set_trace()
+
 if __name__ == '__main__':
     data = extract_data()
     statistical_analysis(data)
