@@ -19,55 +19,38 @@ def rms(value):
 
 def extract_data():
     hrir_raw = gen_data_hrir(DATADIR_HRIR)['data']
-    # hrir array is 3d, but we care only about 60 deg azimuth and 0 deg elevation (perfect listening position):
+    # hrir array is 3d, but we care only about +-30 deg azimuth and 0 deg elevation (perfect listening position):
     # this corresponds to:
-    # hrir_r[2][8] for az -65 and 0 el  <left side
-    # hrir_r[3][8] for az -55 and 0 el  <left side
-    # hrir_r[23][8] for az 55 and 0 el  <right side
-    # hrir_r[24][8] for az 65 and 0 el  <right side
+    # hrir_r[7][8] for az -65 and 0 el  <left side
+    # hrir_r[19][8] for az 55 and 0 el  <right side
     # same for left
     hrir_filtered = []
     for s in hrir_raw:
-        left_raw = {
-            'right_ear_1': s['hrir_r'][2][8],
-            'right_ear_2': s['hrir_r'][3][8],
-            'left_ear_1': s['hrir_l'][2][8],
-            'left_ear_2': s['hrir_l'][3][8],
+        left = {
+            'right': s['hrir_r'][7][8],
+            'left': s['hrir_l'][7][8],
         }
-        right_raw = {
-            'right_ear_1': s['hrir_r'][23][8],
-            'right_ear_2': s['hrir_r'][24][8],
-            'left_ear_1': s['hrir_l'][23][8],
-            'left_ear_2': s['hrir_l'][24][8],
-        }
-        left_avg = {
-            'right': [(r1 + r2) / 2 for r1, r2 in zip (left_raw['right_ear_1'], left_raw['right_ear_2'])],
-            'left': [(l1 + l2) / 2 for l1, l2 in zip (left_raw['left_ear_1'], left_raw['left_ear_2'])]
-        }
-        right_avg = {
-            'right': [(r1 + r2) / 2 for r1, r2 in zip (right_raw['right_ear_1'], right_raw['right_ear_2'])],
-            'left': [(l1 + l2) / 2 for l1, l2 in zip (right_raw['left_ear_1'], right_raw['left_ear_2'])]
+        right = {
+            'right': s['hrir_r'][19][8],
+            'left': s['hrir_l'][19][8],
         }
         name = s['name'][0]
 
+
         hrir_filtered.append({
             # raw data from measurements
-            'left': left_raw,      
-            'right': right_raw,
-            # averaged data of 55 and 65 degrees as we only care about 60
-            'left_avg': left_avg,
-            'right_avg': right_avg,
-            'left_avg_fft': {
-                'right': fft(left_avg['right']),
-                'left': fft(left_avg['left'])
+            'left': left,      
+            'right': right,
+            'left_fft': {
+                'right': fft(left['right']),
+                'left': fft(left['left'])
             },
             'right_avg_fft': {
-                'right': fft(right_avg['right']),
-                'left': fft(right_avg['left'])
+                'right': fft(right['right']),
+                'left': fft(right['left'])
             },
             'name': name
         })
-    
     anthro = gen_data_anthro(DATADIR_PHY)
     # we only care about head circumference and horizontal ear offset from center.
     # circumference: x16, offset: x5 (Don't forget -1 as index starts from 0, not 1)
@@ -83,8 +66,8 @@ def extract_data():
 
     # since anthropometric data is assuming human head is symetric, we will only check one side.
     for s in hrir_filtered:
-        left = s['left_avg_fft']['left']
-        right = s['left_avg_fft']['right']
+        left = s['left_fft']['left']
+        right = s['left_fft']['right']
         diff = abs(left - right)
         s['fft_diff'] = diff
 
@@ -99,13 +82,15 @@ def extract_data():
         # plt.show()
 
         # get low frequency attenuation
-        for i in range(len(diff)):
+        for i in range(1, len(diff)):
             if diff[i+1] < diff[i]:
                 peak_diff = diff[i]
                 break
     
         # get frequency mapped to fft index
         xfeed_freq = xf[i]
+        if xfeed_freq == 0:
+            pdb.set_trace()
 
         # get attenuation in dB
         left_rms = rms(left[:i])
@@ -118,7 +103,6 @@ def extract_data():
         s['xfeed_freq'] = xfeed_freq
 
         # print(f"circumference: {s['circumference']}, offset: {s['offset']:.2f}, att_db: {xfeed_att_db:.2f}, freq: {xfeed_freq}")
-        
     return hrir_filtered
 
 
@@ -172,3 +156,5 @@ def statistical_analysis(data):
 if __name__ == '__main__':
     data = extract_data()
     statistical_analysis(data)
+    # TODO: plot statistically significant data
+    # TODO: create usable results
