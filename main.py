@@ -125,6 +125,7 @@ def statistical_analysis(data):
     # Run tests: 
     results = []
     meta = []
+    filtered_data = []
     x_params = {
         'x_freq': xfeed_freq,
         'x_att_db': xfeed_db,
@@ -139,22 +140,52 @@ def statistical_analysis(data):
                 if not np.isnan(stats_data[sd][i]):
                     x_test.append(x[i])
                     sd_test.append(stats_data[sd][i])
+            filtered_data.append((sd_test, x_test))
             p = pearsonr(x_test, sd_test)
             s = spearmanr(x_test, sd_test)
             k = kendalltau(x_test, sd_test)
 
             results.append((p, s, k))
             meta.append((name, sd))
-
+    output = []
     for r in range(len(results)):
         p_values = [p[1] for p in results[r]]
         significance = [0.05, 0.01, 0.001]
+        datapoint = {
+            'p': p_values,
+            'y': meta[r][0],
+            'x': x_params_map[str(meta[r][1])],
+            'significant': False,
+            'data': filtered_data[r]
+            }
         for s in significance:
             if all([i<s for i in p_values]):
+                datapoint['significant'] = True
                 print(f"{meta[r][0]} correlates to {x_params_map[str(meta[r][1])]} with {s} significance")
+        output.append(datapoint)
+
+    return output
+
+
+def plot_results(results):
+    # first, from results extract only significant parameter pairs:
+    plotable = [(r['x'], r['y'], r['data']) for r in results if r['y'] != 'x_att']
+
+    # plots for x_freq: 
+    for x in plotable:
+        fig, ax = plt.subplots()
+        ax.scatter(x[2][0], x[2][1])
+        title = f'{x[0]} vs {x[1]}'
+        ax.set(xlabel=x[0], ylabel=x[1], title=title)
+        ax.grid()
+
+        fig.savefig(f"{title.replace(' ','_')}.png")
+        plt.show()
+    
 
 if __name__ == '__main__':
     data = extract_data()
-    statistical_analysis(data)
-    # TODO: plot statistically significant data
+    results = statistical_analysis(data)
+    results_significant = [r for r in results if r['significant']]
+    plot_results(results_significant)
     # TODO: create usable results
